@@ -107,5 +107,14 @@
       "es": "",
       "pt": ""
     }
+  },
+  {
+    "name": "Readability",
+    "path": "readability/main.py",
+    "description": {
+      "en": "",
+      "es": "",
+      "pt": ""
+    }
   }
 ]
