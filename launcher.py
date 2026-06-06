@@ -51,6 +51,7 @@ I18N = {
         "no_projects":   "No projects configured.\nEdit launcher_projects.json to add entries.",
         "no_results":    "No results match your search.",
         "hint":          "Protected under Brazilian Law 9,610/98",
+        "output_title":  "Output from {}",
     },
     "es": {
         "title":         "◈ PROYECTOS DE PYTHON DE EDUARDO",
@@ -70,6 +71,7 @@ I18N = {
         "no_projects":   "No hay proyectos configurados.\nEdita launcher_projects.json para agregar entradas.",
         "no_results":    "Ningún resultado coincide con tu búsqueda.",
         "hint":          "Protegido por la Ley Brasileña 9.610/98",
+        "output_title":  "Salida de {}",
     },
     "pt": {
         "title":         "◈ PROJETOS PYTHON DO EDUARDO",
@@ -89,6 +91,7 @@ I18N = {
         "no_projects":   "Nenhum projeto configurado.\nEdite launcher_projects.json para adicionar entradas.",
         "no_results":    "Nenhum resultado corresponde à sua pesquisa.",
         "hint":          "Protegido pela Lei Brasileira nº 9.610/98",
+        "output_title":  "Saída de {}",
     },
 }
 
@@ -101,6 +104,10 @@ def load_projects():
             for p in projects:
                 if not os.path.isabs(p["path"]):
                     p["path"] = os.path.normpath(os.path.join(base_dir, p["path"]))
+                if "args" not in p:
+                    p["args"] = []
+                elif isinstance(p["args"], str):
+                    p["args"] = [p["args"]]
             return projects
         except Exception:
             pass
@@ -123,7 +130,6 @@ class ProjectCard(tk.Frame):
         self._bind_hover(self._all_widgets())
 
     def _get_description(self):
-        """Extracts description based on the current language or fallback to string."""
         desc_data = self.project.get("description", "")
         curr_lang = self.get_current_lang()
         if isinstance(desc_data, dict):
@@ -136,20 +142,17 @@ class ProjectCard(tk.Frame):
         self._inner = tk.Frame(self, bg=CARD, padx=14, pady=12)
         self._inner.pack(side="left", fill="both", expand=True)
 
-        # Name row
         self._name_row = tk.Frame(self._inner, bg=CARD)
         self._name_row.pack(fill="x")
         tk.Label(self._name_row, text="⬡", fg=ACCENT2, bg=CARD, font=("Courier New", 13)).pack(side="left", padx=(0, 8))
         self._name_lbl = tk.Label(self._name_row, text=self.project["name"], fg=TEXT, bg=CARD, font=FONT_HEAD, anchor="w")
         self._name_lbl.pack(side="left", fill="x", expand=True)
 
-        # Description (Localized)
         self._desc_lbl = tk.Label(self._inner, text=self._get_description(),
                                   fg=SUBTEXT, bg=CARD, font=FONT_SMALL,
                                   anchor="w", wraplength=500, justify="left")
         self._desc_lbl.pack(fill="x", pady=(3, 0))
 
-        # Button + status row
         self._btn_row = tk.Frame(self._inner, bg=CARD)
         self._btn_row.pack(fill="x", pady=(10, 0))
         self._run_btn = tk.Button(self._btn_row, text=t["run"], font=FONT_BTN, bg=ACCENT, fg="white", 
@@ -166,7 +169,8 @@ class ProjectCard(tk.Frame):
 
     def _bind_hover(self, widgets):
         for w in widgets:
-            w.bind("<Enter>", self._on_enter); w.bind("<Leave>", self._on_leave)
+            w.bind("<Enter>", self._on_enter)
+            w.bind("<Leave>", self._on_leave)
 
     def _on_enter(self, _):
         for w in self._all_widgets(): 
@@ -180,8 +184,11 @@ class ProjectCard(tk.Frame):
 
     def set_status(self, state: str):
         self._state = state
-        t = self.lang_fn(); col = self._STATE_COLORS.get(state, SUBTEXT); lbl = t.get(self._STATE_KEY.get(state, ""), "")
-        self._status_dot.config(fg=col); self._status_lbl.config(fg=col, text=lbl)
+        t = self.lang_fn()
+        col = self._STATE_COLORS.get(state, SUBTEXT)
+        lbl = t.get(self._STATE_KEY.get(state, ""), "")
+        self._status_dot.config(fg=col)
+        self._status_lbl.config(fg=col, text=lbl)
 
     def refresh_lang(self):
         t = self.lang_fn()
@@ -197,87 +204,157 @@ class Launcher(tk.Tk):
         self._lang = "en"
         self.projects = load_projects()
         self.cards = {}
-        self.configure(bg=BG); self.geometry("720x650"); self.minsize(580, 440)
-        self._build_ui(); self._refresh_list()
+        self.configure(bg=BG)
+        self.geometry("720x650")
+        self.minsize(580, 440)
+        self._build_ui()
+        self._refresh_list()
 
-    def _t(self, key: str) -> str: return I18N[self._lang].get(key, key)
-    def _lang_dict(self) -> dict: return I18N[self._lang]
+    def _t(self, key: str) -> str:
+        return I18N[self._lang].get(key, key)
+
+    def _lang_dict(self) -> dict:
+        return I18N[self._lang]
 
     def _build_ui(self):
-        hdr = tk.Frame(self, bg=PANEL, pady=16); hdr.pack(fill="x")
+        hdr = tk.Frame(self, bg=PANEL, pady=16)
+        hdr.pack(fill="x")
         self._title_lbl = tk.Label(hdr, text=self._t("title"), fg=ACCENT2, bg=PANEL, font=FONT_TITLE)
         self._title_lbl.pack(side="left", padx=22)
 
-        lf = tk.Frame(hdr, bg=PANEL); lf.pack(side="right", padx=22)
+        lf = tk.Frame(hdr, bg=PANEL)
+        lf.pack(side="right", padx=22)
         self._lang_btns = {}
         for code, label in [("en", "EN"), ("es", "ES"), ("pt", "PT")]:
             b = tk.Button(lf, text=label, font=FONT_LANG, width=4, relief="flat", cursor="hand2", pady=6, command=lambda c=code: self._switch_lang(c))
-            b.pack(side="left", padx=3); self._lang_btns[code] = b
+            b.pack(side="left", padx=3)
+            self._lang_btns[code] = b
         self._style_lang_btns()
 
         self._hint_lbl = tk.Label(self, text=self._t("hint"), fg=WARN, bg=PANEL, font=FONT_SMALL, anchor="w", padx=16, pady=5)
         self._hint_lbl.pack(fill="x")
 
-        sf = tk.Frame(self, bg=BG, pady=12, padx=20); sf.pack(fill="x")
-        self._search_var = tk.StringVar(); self._search_var.trace_add("write", lambda *_: self._refresh_list())
+        sf = tk.Frame(self, bg=BG, pady=12, padx=20)
+        sf.pack(fill="x")
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._refresh_list())
         tk.Entry(sf, textvariable=self._search_var, bg=CARD, fg=TEXT, insertbackground=ACCENT2, relief="flat", font=FONT_BODY, highlightthickness=1, highlightcolor=ACCENT, highlightbackground=BORDER).pack(fill="x", expand=True, ipady=7)
 
-        wrap = tk.Frame(self, bg=BG); wrap.pack(fill="both", expand=True, padx=20, pady=(0, 14))
+        wrap = tk.Frame(self, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=20, pady=(0, 14))
         self._canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0, bd=0)
-        sb = ttk.Scrollbar(wrap, orient="vertical", command=self._canvas.yview); self._canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y"); self._canvas.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
         self._card_frame = tk.Frame(self._canvas, bg=BG)
         self._win_id = self._canvas.create_window((0, 0), window=self._card_frame, anchor="nw")
         self._canvas.bind("<Configure>", lambda e: self._canvas.itemconfig(self._win_id, width=e.width))
         self._card_frame.bind("<Configure>", lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
         self._status_bar = tk.Label(self, text=self._t("ready"), fg=SUBTEXT, bg=PANEL, font=FONT_SMALL, anchor="w", padx=16, pady=6)
-        self._status_bar.pack(fill="x", side="bottom"); self.title(self._t("title"))
+        self._status_bar.pack(fill="x", side="bottom")
+        self.title(self._t("title"))
 
     def _switch_lang(self, code: str):
-        self._lang = code; self._style_lang_btns(); self._apply_lang()
+        self._lang = code
+        self._style_lang_btns()
+        self._apply_lang()
 
     def _style_lang_btns(self):
         for code, btn in self._lang_btns.items():
-            if code == self._lang: btn.config(bg=ACCENT, fg="white")
-            else: btn.config(bg=CARD, fg=SUBTEXT)
+            if code == self._lang:
+                btn.config(bg=ACCENT, fg="white")
+            else:
+                btn.config(bg=CARD, fg=SUBTEXT)
 
     def _apply_lang(self):
         t = self._lang_dict()
-        self.title(t["title"]); self._title_lbl.config(text=t["title"]); self._hint_lbl.config(text=t["hint"])
+        self.title(t["title"])
+        self._title_lbl.config(text=t["title"])
+        self._hint_lbl.config(text=t["hint"])
         self._status_bar.config(text=t["ready"])
-        for card in self.cards.values(): card.refresh_lang()
+        for card in self.cards.values():
+            card.refresh_lang()
+
+    def _show_output(self, project_name: str, stdout: str, stderr: str):
+        """Show script output in a popup window."""
+        output = ""
+        if stdout:
+            output += stdout
+        if stderr:
+            if stdout:
+                output += "\n--- STDERR ---\n"
+            output += stderr
+        if not output.strip():
+            return
+        
+        # Create popup window
+        win = tk.Toplevel(self)
+        win.title(self._t("output_title").format(project_name))
+        win.geometry("600x400")
+        win.configure(bg=BG)
+        
+        # Text widget with scrollbar
+        frame = tk.Frame(win, bg=BG)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        text = tk.Text(frame, bg=CARD, fg=TEXT, font=FONT_BODY, wrap="word", relief="flat", borderwidth=0)
+        text.insert("1.0", output)
+        text.config(state="disabled")
+        
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        
+        text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        
+        # Close button
+        btn = tk.Button(win, text="Close", command=win.destroy, bg=ACCENT, fg="white", font=FONT_BTN, relief="flat", padx=10, pady=4)
+        btn.pack(pady=(0, 10))
 
     def _run_project(self, project: dict, card: "ProjectCard"):
         path = project["path"]
         if not os.path.exists(path):
             messagebox.showerror(self._t("not_found"), f"Path not found:\n{path}")
             return
-        self._set_status(self._t("launching").format(project["name"])); card.set_status("running")
+        self._set_status(self._t("launching").format(project["name"]))
+        card.set_status("running")
+
+        cmd = [sys.executable, path] + project.get("args", [])
+        cwd = os.path.dirname(path)
 
         def _worker():
             try:
-                proc = subprocess.Popen([sys.executable, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(path))
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
                 self.after(0, lambda: self._set_status(self._t("launched").format(project["name"])))
                 stdout, stderr = proc.communicate()
+                stdout_dec = stdout.decode('utf-8', errors='replace')
+                stderr_dec = stderr.decode('utf-8', errors='replace')
                 status = "done" if proc.returncode == 0 else "error"
                 msg = self._t("finished").format(project["name"]) if status == "done" else self._t("errored").format(project["name"])
                 self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
+                # Show output if any
+                if stdout_dec or stderr_dec:
+                    self.after(0, lambda: self._show_output(project["name"], stdout_dec, stderr_dec))
             except Exception as e:
                 self.after(0, lambda: (card.set_status("error"), messagebox.showerror("Error", str(e))))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _refresh_list(self):
         query = self._search_var.get().lower() if hasattr(self, "_search_var") else ""
-        for w in self._card_frame.winfo_children(): w.destroy()
+        for w in self._card_frame.winfo_children():
+            w.destroy()
         self.cards.clear()
 
         visible = [p for p in self.projects if query in p["name"].lower() or query in p["path"].lower()]
 
         for proj in visible:
             card = ProjectCard(self._card_frame, proj, lang_fn=self._lang_dict, get_current_lang=lambda: self._lang, on_run=self._run_project)
-            card.pack(fill="x", pady=(0, 10)); self.cards[proj["path"]] = card
+            card.pack(fill="x", pady=(0, 10))
+            self.cards[proj["path"]] = card
 
-    def _set_status(self, msg: str): self._status_bar.config(text=msg)
+    def _set_status(self, msg: str):
+        self._status_bar.config(text=msg)
 
 if __name__ == "__main__":
     app = Launcher()

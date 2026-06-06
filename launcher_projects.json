@@ -70,5 +70,15 @@
       "es": "Un juego de estrategia clásico de turnos para dos jugadores jugado en una cuadrícula de 3x3 para alinear tres símbolos coincidentes.",
       "pt": "Um jogo de estratégia clássico de turnos para dois jogadores jogado em uma grade de 3x3 para alinhar três símbolos correspondentes."
     }
+  },
+  {
+    "name": "DNA",
+    "path": "dna/dna.py",
+    "args": ["databases/small.csv", "sequences/1.txt"],
+    "description": {
+      "en": "",
+      "es": "",
+      "pt": ""
+    }
   }
 ]
