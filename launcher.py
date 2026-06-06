@@ -5,6 +5,7 @@ import sys
 import os
 import json
 import threading
+import re
 
 # ── Config ───────────────────────────────────────────────────────────────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -52,6 +53,10 @@ I18N = {
         "no_results":    "No results match your search.",
         "hint":          "Protected under Brazilian Law 9,610/98",
         "output_title":  "Output from {}",
+        "missing_module": "Module '{}' not found.\nInstall it now using pip?",
+        "installing":    "Installing {}...",
+        "install_success": "Module '{}' installed successfully. Re-running script...",
+        "install_fail":   "Failed to install '{}'.\nError:\n{}",
     },
     "es": {
         "title":         "◈ PROYECTOS DE PYTHON DE EDUARDO",
@@ -72,6 +77,10 @@ I18N = {
         "no_results":    "Ningún resultado coincide con tu búsqueda.",
         "hint":          "Protegido por la Ley Brasileña 9.610/98",
         "output_title":  "Salida de {}",
+        "missing_module": "Módulo '{}' no encontrado.\n¿Instalarlo ahora con pip?",
+        "installing":    "Instalando {}...",
+        "install_success": "Módulo '{}' instalado correctamente. Reejecutando script...",
+        "install_fail":   "Error al instalar '{}'.\nError:\n{}",
     },
     "pt": {
         "title":         "◈ PROJETOS PYTHON DO EDUARDO",
@@ -92,6 +101,10 @@ I18N = {
         "no_results":    "Nenhum resultado corresponde à sua pesquisa.",
         "hint":          "Protegido pela Lei Brasileira nº 9.610/98",
         "output_title":  "Saída de {}",
+        "missing_module": "Módulo '{}' não encontrado.\nInstalá-lo agora usando pip?",
+        "installing":    "Instalando {}...",
+        "install_success": "Módulo '{}' instalado com sucesso. Reexecutando script...",
+        "install_fail":   "Falha ao instalar '{}'.\nErro:\n{}",
     },
 }
 
@@ -288,13 +301,11 @@ class Launcher(tk.Tk):
         if not output.strip():
             return
         
-        # Create popup window
         win = tk.Toplevel(self)
         win.title(self._t("output_title").format(project_name))
         win.geometry("600x400")
         win.configure(bg=BG)
         
-        # Text widget with scrollbar
         frame = tk.Frame(win, bg=BG)
         frame.pack(fill="both", expand=True, padx=10, pady=10)
         
@@ -308,11 +319,53 @@ class Launcher(tk.Tk):
         text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         
-        # Close button
         btn = tk.Button(win, text="Close", command=win.destroy, bg=ACCENT, fg="white", font=FONT_BTN, relief="flat", padx=10, pady=4)
         btn.pack(pady=(0, 10))
 
-    def _run_project(self, project: dict, card: "ProjectCard"):
+    def _try_install_module(self, module_name, project, card, original_cmd, cwd):
+        """Attempt to install missing module and re-run the script."""
+        result = messagebox.askyesno(
+            self._t("err_title"),
+            self._t("missing_module").format(module_name)
+        )
+        if not result:
+            # User declined -> mark error
+            card.set_status("error")
+            self._set_status(self._t("errored").format(project["name"]))
+            return False
+
+        # Install the module
+        self._set_status(self._t("installing").format(module_name))
+        try:
+            install_proc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", module_name],
+                capture_output=True, text=True, timeout=60
+            )
+            if install_proc.returncode != 0:
+                error_msg = install_proc.stderr or install_proc.stdout or "Unknown error"
+                self.after(0, lambda: messagebox.showerror(
+                    self._t("err_title"),
+                    self._t("install_fail").format(module_name, error_msg)
+                ))
+                card.set_status("error")
+                self._set_status(self._t("errored").format(project["name"]))
+                return False
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror(
+                self._t("err_title"),
+                self._t("install_fail").format(module_name, str(e))
+            ))
+            card.set_status("error")
+            self._set_status(self._t("errored").format(project["name"]))
+            return False
+
+        # Installation succeeded – re-run the script
+        self._set_status(self._t("install_success").format(module_name))
+        self._run_project(project, card, retry=True)
+        return True
+
+    def _run_project(self, project: dict, card: "ProjectCard", retry=False):
+        """Launch the project. If retry=True, do not attempt module installation again."""
         path = project["path"]
         if not os.path.exists(path):
             messagebox.showerror(self._t("not_found"), f"Path not found:\n{path}")
@@ -325,17 +378,26 @@ class Launcher(tk.Tk):
 
         def _worker():
             try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, text=True)
                 self.after(0, lambda: self._set_status(self._t("launched").format(project["name"])))
                 stdout, stderr = proc.communicate()
-                stdout_dec = stdout.decode('utf-8', errors='replace')
-                stderr_dec = stderr.decode('utf-8', errors='replace')
                 status = "done" if proc.returncode == 0 else "error"
                 msg = self._t("finished").format(project["name"]) if status == "done" else self._t("errored").format(project["name"])
                 self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
-                # Show output if any
-                if stdout_dec or stderr_dec:
-                    self.after(0, lambda: self._show_output(project["name"], stdout_dec, stderr_dec))
+
+                # Show output regardless
+                if stdout or stderr:
+                    self.after(0, lambda: self._show_output(project["name"], stdout, stderr))
+
+                # If error and not a retry, check for ModuleNotFoundError
+                if proc.returncode != 0 and not retry:
+                    # Look for "ModuleNotFoundError: No module named 'something'"
+                    match = re.search(r"ModuleNotFoundError: No module named '([^']+)'", stderr)
+                    if match:
+                        missing_module = match.group(1)
+                        # Attempt to install on a separate thread (no nested threading)
+                        self.after(0, lambda: self._try_install_module(missing_module, project, card, cmd, cwd))
+                    # else: no missing module detected -> already marked error
             except Exception as e:
                 self.after(0, lambda: (card.set_status("error"), messagebox.showerror("Error", str(e))))
         threading.Thread(target=_worker, daemon=True).start()

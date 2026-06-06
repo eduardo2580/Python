@@ -80,5 +80,14 @@
       "es": "",
       "pt": ""
     }
+  },
+  {
+    "name": "Cash",
+    "path": "cash/main.py",
+    "description": {
+      "en": "",
+      "es": "",
+      "pt": ""
+    }
   }
 ]
