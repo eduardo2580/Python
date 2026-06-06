@@ -89,5 +89,23 @@
       "es": "",
       "pt": ""
     }
+  },
+  {
+    "name": "HelloMe",
+    "path": "HelloMe/main.py",
+    "description":{
+      "en": "",
+      "es": "",
+      "pt": ""
+    }
+  },
+  {
+    "name": "Mario",
+    "path": "mario/main.py",
+    "description": {
+      "en": "",
+      "es": "",
+      "pt": ""
+    }
   }
 ]

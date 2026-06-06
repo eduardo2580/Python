@@ -209,6 +209,215 @@ class ProjectCard(tk.Frame):
         self._desc_lbl.config(text=self._get_description())
         self.set_status(self._state)
 
+# ── Embedded Terminal Window ──────────────────────────────────────────────────
+
+class TerminalWindow(tk.Toplevel):
+    """
+    Embedded Tkinter terminal: runs a subprocess, streams its stdout/stderr
+    into a Text widget in real-time (character-by-character, binary reads so
+    prompts without newlines appear immediately), and sends user input to stdin.
+    Works on all platforms — no external terminal required.
+    """
+
+    _POLL_MS = 30   # how often (ms) to drain the output queue into the widget
+
+    def __init__(self, parent, project_name: str, cmd: list, cwd: str, on_done_cb=None):
+        super().__init__(parent)
+        self.title(f"◈ {project_name}")
+        self.geometry("700x480")
+        self.minsize(500, 340)
+        self.configure(bg=BG)
+        self._on_done_cb = on_done_cb
+        self._proc       = None
+        self._closed     = False
+        # Thread-safe queue: items are (text, tag) tuples
+        import queue
+        self._queue = queue.Queue()
+
+        self._build_ui(project_name)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._start_process(cmd, cwd)
+        self._poll_queue()   # start the Tkinter-side drain loop
+
+    # ── UI ────────────────────────────────────────────────────────────────────
+
+    def _build_ui(self, project_name: str):
+        # ── header ──
+        hdr = tk.Frame(self, bg=PANEL, pady=8, padx=14)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=f"⬡ {project_name}", fg=ACCENT2, bg=PANEL,
+                 font=FONT_HEAD).pack(side="left")
+        self._status_lbl = tk.Label(hdr, text="● running", fg=ACCENT2,
+                                    bg=PANEL, font=FONT_SMALL)
+        self._status_lbl.pack(side="right")
+
+        # ── input bar (packed before output so it's always at the bottom) ──
+        inp_frame = tk.Frame(self, bg=PANEL, pady=8, padx=10)
+        inp_frame.pack(fill="x", side="bottom")
+
+        tk.Label(inp_frame, text="›", fg=ACCENT2, bg=PANEL,
+                 font=("Courier New", 14, "bold")).pack(side="left", padx=(0, 6))
+
+        self._input_var = tk.StringVar()
+        self._entry = tk.Entry(
+            inp_frame, textvariable=self._input_var,
+            bg=CARD, fg=TEXT, insertbackground=ACCENT2,
+            relief="flat", font=FONT_BODY,
+            highlightthickness=1, highlightcolor=ACCENT, highlightbackground=BORDER,
+        )
+        self._entry.pack(side="left", fill="x", expand=True, ipady=6)
+        self._entry.bind("<Return>", self._on_submit)
+        self._entry.focus_set()
+
+        tk.Button(
+            inp_frame, text="Send", font=FONT_BTN, bg=ACCENT, fg="white",
+            relief="flat", padx=12, pady=4, cursor="hand2",
+            command=self._on_submit,
+        ).pack(side="left", padx=(8, 0))
+
+        # ── output area ──
+        out_frame = tk.Frame(self, bg=BG)
+        out_frame.pack(fill="both", expand=True, padx=10, pady=(8, 4))
+
+        self._output = tk.Text(
+            out_frame, bg="#0a0a10", fg=TEXT, font=FONT_BODY,
+            wrap="word", relief="flat", borderwidth=0,
+            state="disabled", cursor="arrow",
+        )
+        sb = ttk.Scrollbar(out_frame, orient="vertical", command=self._output.yview)
+        self._output.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self._output.pack(side="left", fill="both", expand=True)
+
+        # colour tags
+        self._output.tag_configure("echo",   foreground=ACCENT2)   # user's typed input
+        self._output.tag_configure("stderr", foreground=DANGER)
+        self._output.tag_configure("info",   foreground=WARN)
+
+    # ── Process management ────────────────────────────────────────────────────
+
+    def _start_process(self, cmd: list, cwd: str):
+        try:
+            self._proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=cwd,
+                # binary mode + no buffering = prompts appear the instant they're written
+                bufsize=0,
+            )
+        except Exception as e:
+            self._queue.put((f"[ERROR] Could not start process:\n{e}\n", "stderr"))
+            self._queue.put(("__EXIT__", 1))
+            return
+
+        threading.Thread(target=self._reader, args=(self._proc.stdout, ""),
+                         daemon=True).start()
+        threading.Thread(target=self._reader, args=(self._proc.stderr, "stderr"),
+                         daemon=True).start()
+        threading.Thread(target=self._monitor, daemon=True).start()
+
+    def _reader(self, stream, tag: str):
+        """
+        Read raw bytes one-by-one from the stream.
+        Accumulate into a buffer; flush to the queue either on newline
+        OR after a short idle gap (so prompts without \\n show up immediately).
+        """
+        import time
+        buf = b""
+        while True:
+            try:
+                ch = stream.read(1)
+            except Exception:
+                break
+            if not ch:
+                break
+            buf += ch
+            # Flush on newline so normal output lines appear atomically,
+            # but also flush on any non-newline character when the buffer
+            # already has content — this makes prompts like "Change: " visible
+            # without waiting for a newline that never comes.
+            if ch == b"\n" or (buf and ch != b"\n"):
+                text = buf.decode("utf-8", errors="replace")
+                self._queue.put((text, tag))
+                buf = b""
+        if buf:
+            self._queue.put((buf.decode("utf-8", errors="replace"), tag))
+
+    def _monitor(self):
+        if self._proc:
+            self._proc.wait()
+            self._queue.put(("__EXIT__", self._proc.returncode))
+
+    # ── Queue → UI drain loop (runs on the main thread via after()) ───────────
+
+    def _poll_queue(self):
+        if self._closed:
+            return
+        # Drain everything currently in the queue in one Tkinter call burst
+        try:
+            while True:
+                item = self._queue.get_nowait()
+                text, tag = item
+                if text == "__EXIT__":
+                    self._mark_finished(tag)   # tag holds the returncode here
+                    return                     # stop polling
+                self._append(text, tag)
+        except Exception:
+            pass
+        self.after(self._POLL_MS, self._poll_queue)
+
+    def _append(self, text: str, tag: str = ""):
+        self._output.config(state="normal")
+        if tag:
+            self._output.insert("end", text, tag)
+        else:
+            self._output.insert("end", text)
+        self._output.config(state="disabled")
+        self._output.see("end")
+
+    def _mark_finished(self, returncode: int):
+        if self._closed:
+            return
+        ok = returncode == 0
+        self._status_lbl.config(
+            text="● finished" if ok else f"● exited ({returncode})",
+            fg=SUCCESS if ok else DANGER,
+        )
+        self._entry.config(state="disabled")
+        self._append(f"\n[Process exited with code {returncode}]\n", "info")
+        if self._on_done_cb:
+            self._on_done_cb(returncode)
+
+    # ── User input ────────────────────────────────────────────────────────────
+
+    def _on_submit(self, _event=None):
+        text = self._input_var.get()
+        self._input_var.set("")
+        if not text and self._proc and self._proc.poll() is not None:
+            return
+        if self._proc and self._proc.stdin and not self._proc.stdin.closed:
+            try:
+                # Echo what the user typed so the terminal looks natural
+                self._append(text + "\n", "echo")
+                self._proc.stdin.write((text + "\n").encode())
+                self._proc.stdin.flush()
+            except Exception:
+                pass
+
+    # ── Close ─────────────────────────────────────────────────────────────────
+
+    def _on_close(self):
+        self._closed = True
+        if self._proc and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+        self.destroy()
+
+
 # ── Launcher window ───────────────────────────────────────────────────────────
 
 class Launcher(tk.Tk):
@@ -329,12 +538,10 @@ class Launcher(tk.Tk):
             self._t("missing_module").format(module_name)
         )
         if not result:
-            # User declined -> mark error
             card.set_status("error")
             self._set_status(self._t("errored").format(project["name"]))
             return False
 
-        # Install the module
         self._set_status(self._t("installing").format(module_name))
         try:
             install_proc = subprocess.run(
@@ -359,48 +566,108 @@ class Launcher(tk.Tk):
             self._set_status(self._t("errored").format(project["name"]))
             return False
 
-        # Installation succeeded – re-run the script
         self._set_status(self._t("install_success").format(module_name))
         self._run_project(project, card, retry=True)
         return True
 
+    def _get_imported_modules(self, script_path: str) -> set:
+        """Extract top-level module names from import statements."""
+        modules = set()
+        try:
+            with open(script_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            lines = content.splitlines()
+            for line in lines:
+                line = line.strip()
+                if line.startswith("import "):
+                    parts = line.split()[1:]
+                    for p in parts:
+                        mod = p.split(",")[0].split(" as ")[0].strip()
+                        if mod and not mod.startswith("."):
+                            modules.add(mod)
+                elif line.startswith("from "):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mod = parts[1].split(" import ")[0]
+                        if mod and not mod.startswith("."):
+                            modules.add(mod)
+        except Exception:
+            pass
+        return modules
+
+    def _ensure_modules_installed(self, project: dict, card: "ProjectCard") -> bool:
+        """Check if all imported modules are installed; if not, ask to install."""
+        path = project["path"]
+        modules = self._get_imported_modules(path)
+        missing = []
+        builtins = {"sys", "os", "tkinter", "csv", "json", "re", "threading", "subprocess", "math", "random", "time", "collections", "itertools", "datetime"}
+        for mod in modules:
+            if mod in builtins:
+                continue
+            try:
+                subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, check=True, timeout=5)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                missing.append(mod)
+        if not missing:
+            return True
+
+        if len(missing) == 1:
+            msg = f"Module '{missing[0]}' is required but not installed.\nInstall it now using pip?"
+        else:
+            msg = f"Modules: {', '.join(missing)} are required but not installed.\nInstall them now using pip?"
+        if not messagebox.askyesno(self._t("err_title"), msg):
+            card.set_status("error")
+            self._set_status(self._t("errored").format(project["name"]))
+            return False
+
+        for mod in missing:
+            self._set_status(self._t("installing").format(mod))
+            try:
+                proc = subprocess.run([sys.executable, "-m", "pip", "install", mod],
+                                      capture_output=True, text=True, timeout=60)
+                if proc.returncode != 0:
+                    error_msg = proc.stderr or proc.stdout or "Unknown error"
+                    self.after(0, lambda: messagebox.showerror(
+                        self._t("err_title"),
+                        self._t("install_fail").format(mod, error_msg)
+                    ))
+                    card.set_status("error")
+                    self._set_status(self._t("errored").format(project["name"]))
+                    return False
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror(
+                    self._t("err_title"),
+                    self._t("install_fail").format(mod, str(e))
+                ))
+                card.set_status("error")
+                self._set_status(self._t("errored").format(project["name"]))
+                return False
+        self._set_status(self._t("install_success").format(", ".join(missing)))
+        return True
+
+    def _open_terminal_window(self, project: dict, card: "ProjectCard"):
+        """Open the embedded Tkinter terminal window for the project."""
+        if not self._ensure_modules_installed(project, card):
+            return
+        path = project["path"]
+        cwd = os.path.dirname(path)
+        cmd = [sys.executable, "-u", path] + project.get("args", [])
+        self._set_status(self._t("launching").format(project["name"]))
+        card.set_status("running")
+        def on_done(returncode):
+            status = "done" if returncode == 0 else "error"
+            msg = (self._t("finished").format(project["name"]) if status == "done"
+                   else self._t("errored").format(project["name"]))
+            self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
+        TerminalWindow(self, project["name"], cmd, cwd, on_done)
+
     def _run_project(self, project: dict, card: "ProjectCard", retry=False):
-        """Launch the project. If retry=True, do not attempt module installation again."""
         path = project["path"]
         if not os.path.exists(path):
             messagebox.showerror(self._t("not_found"), f"Path not found:\n{path}")
             return
-        self._set_status(self._t("launching").format(project["name"]))
-        card.set_status("running")
-
-        cmd = [sys.executable, path] + project.get("args", [])
-        cwd = os.path.dirname(path)
-
-        def _worker():
-            try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, text=True)
-                self.after(0, lambda: self._set_status(self._t("launched").format(project["name"])))
-                stdout, stderr = proc.communicate()
-                status = "done" if proc.returncode == 0 else "error"
-                msg = self._t("finished").format(project["name"]) if status == "done" else self._t("errored").format(project["name"])
-                self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
-
-                # Show output regardless
-                if stdout or stderr:
-                    self.after(0, lambda: self._show_output(project["name"], stdout, stderr))
-
-                # If error and not a retry, check for ModuleNotFoundError
-                if proc.returncode != 0 and not retry:
-                    # Look for "ModuleNotFoundError: No module named 'something'"
-                    match = re.search(r"ModuleNotFoundError: No module named '([^']+)'", stderr)
-                    if match:
-                        missing_module = match.group(1)
-                        # Attempt to install on a separate thread (no nested threading)
-                        self.after(0, lambda: self._try_install_module(missing_module, project, card, cmd, cwd))
-                    # else: no missing module detected -> already marked error
-            except Exception as e:
-                self.after(0, lambda: (card.set_status("error"), messagebox.showerror("Error", str(e))))
-        threading.Thread(target=_worker, daemon=True).start()
+        # Always use the embedded terminal window
+        self._open_terminal_window(project, card)
 
     def _refresh_list(self):
         query = self._search_var.get().lower() if hasattr(self, "_search_var") else ""
