@@ -76,45 +76,45 @@
     "path": "dna/dna.py",
     "args": ["databases/small.csv", "sequences/1.txt"],
     "description": {
-      "en": "",
-      "es": "",
-      "pt": ""
+      "en": "DNA profiling tool that reads a CSV database of STR counts and a DNA sequence, computes max consecutive STR repeats in the sequence, and matches to a person.",
+      "es": "Herramienta de perfilado de ADN que lee una base de datos CSV con conteos de STR y una secuencia de ADN, calcula repeticiones máximas consecutivas de cada STR y busca coincidencias.",
+      "pt": "Ferramenta de perfilamento de DNA que lê um banco de dados CSV com contagens de STR e uma sequência de DNA, calcula repetições consecutivas máximas de cada STR e procura por correspondência."
     }
   },
   {
     "name": "Cash",
     "path": "cash/main.py",
     "description": {
-      "en": "",
-      "es": "",
-      "pt": ""
+      "en": "Cash change calculator that converts dollars to cents and counts minimum coins (quarters, dimes, nickels, pennies).",
+      "es": "Calculadora de cambio que convierte dólares a centavos y cuenta monedas mínimas (quarters, dimes, nickels, pennies).",
+      "pt": "Calculadora de troco que transforma dólares em centavos e calcula a menor quantidade de moedas necessárias (moedas de 25, 10, 5 e 1 centavo)."
     }
   },
   {
     "name": "HelloMe",
     "path": "HelloMe/main.py",
     "description":{
-      "en": "",
-      "es": "",
-      "pt": ""
+      "en": "Asks for user's name, removes extra spaces, and prints a greeting.",
+      "es": "Pide el nombre del usuario, elimina espacios extra e imprime un saludo.",
+      "pt": "Pede o nome do usuário, remove espaços extras e imprime uma saudação."
     }
   },
   {
     "name": "Mario",
     "path": "mario/main.py",
     "description": {
-      "en": "",
-      "es": "",
-      "pt": ""
+      "en": "Reads a height (1–8) and prints a right-aligned pyramid of hashes.",
+      "es": " Lee una altura (1–8) e imprime una pirámide alineada a la derecha con caracteres #.",
+      "pt": "Lê uma altura (1–8) e imprime uma pirâmide alinhada à direita com caracteres #."
     }
   },
   {
     "name": "Readability",
     "path": "readability/main.py",
     "description": {
-      "en": "",
-      "es": "",
-      "pt": ""
+      "en": "Counts letters, words, and sentences, then applies Coleman-Liau formula to output school reading grade level.",
+      "es": "Cuenta letras, palabras y oraciones, aplica la fórmula Coleman-Liau y muestra el nivel de grado escolar.",
+      "pt": "Conta letras, palavras e frases, aplica a fórmula Coleman-Liau e mostra o nível de leitura escolar."
     }
   }
 ]
