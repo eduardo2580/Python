@@ -2,6 +2,7 @@
 {
     "name": "Web Browser",
     "path": "BrowserInPython/src/main.py",
+    "gui": true,
     "description": {
       "en": "A simple web browser application.",
       "es": "Una aplicación de navegador web sencilla.",
@@ -11,6 +12,7 @@
   {
     "name": "Calculator",
     "path": "CalculatorInPython/src/main.py",
+    "gui": true,
     "description": {
       "en": "A standard calculator application.",
       "es": "Una aplicación de calculadora estándar.",
@@ -20,6 +22,7 @@
   {
     "name": "Snake Game",
     "path": "SnakeInPython/src/main.py",
+    "gui": true,
     "description": {
       "en": "A classic arcade game.",
       "es": "Un juego arcade clásico.",
@@ -29,6 +32,7 @@
   {
     "name": "Flappy Bird",
     "path": "Flappy-Bird/src/main.py",
+    "gui": true,
     "description": {
       "en": "A 2D side-scrolling game where the player navigates a flying bird through a series of pipe obstacles.",
       "es": "Un juego de desplazamiento lateral en 2D donde el jugador navega un pájaro volador a través de una serie de obstáculos de tubos.",
@@ -38,6 +42,7 @@
   {
     "name": "Pong Game",
     "path": "PongInPython/src/main.py",
+    "gui": true,
     "description": {
       "en": "A retro table tennis-themed arcade game featuring two moving paddles and a bouncing ball.",
       "es": "Un juego de arcade con tema de tenis de mesa retro que presenta dos paletas en movimiento y una bola rebotante.",
@@ -47,6 +52,7 @@
   {
     "name": "Secure Password Generator",
     "path": "SecurePassGenerator/src/main.py",
+    "gui": true,
     "description": {
       "en": "A utility tool that creates strong, randomized, and complex passwords for enhanced security.",
       "es": "Una herramienta útil que crea contraseñas fuertes, aleatorias y complejas para una seguridad mejorada.",
@@ -56,6 +62,7 @@
   {
     "name": "QR Code Generator",
     "path": "QRcodeGenerator/src/main.py",
+    "gui": true,
     "description": {
       "en": "An application that encodes user-provided text or URLs into downloadable, scannable QR code images.",
       "es": "Una aplicación que codifica el texto o las URLs proporcionadas por el usuario en imágenes de códigos QR descargables y escaneables.",
@@ -65,6 +72,7 @@
   {
     "name": "Tic Tac Toe",
     "path": "TicTacToe/src/main.py",
+    "gui": true,
     "description": {
       "en": "A classic two-player turn-based strategy game played on a 3x3 grid to align three matching symbols.",
       "es": "Un juego de estrategia clásico de turnos para dos jugadores jugado en una cuadrícula de 3x3 para alinear tres símbolos coincidentes.",
