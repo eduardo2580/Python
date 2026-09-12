@@ -262,19 +262,16 @@ def run_browser():
 
 
 def main():
-    env_name = "myenv"
+    env_name = os.path.join(os.path.dirname(os.path.abspath(__file__)), "myenv")
     create_virtualenv(env_name)
     ensure_packages_in_venv(env_name)
 
-    print("\nPacotes instalados no ambiente virtual.")
-    print("Para executar corretamente, rode este script usando o Python do venv.")
-    print(f"Exemplo: {get_venv_python(env_name)} {os.path.basename(__file__)}\n")
+    venv_python = os.path.abspath(get_venv_python(env_name))
+    current = os.path.abspath(sys.executable)
+    if os.path.normcase(current) != os.path.normcase(venv_python):
+        raise SystemExit(subprocess.call([venv_python, os.path.abspath(__file__)]))
 
-    if is_module_installed("PyQt5") and is_module_installed("PyQt5.QtWebEngineWidgets"):
-        run_browser()
-    else:
-        print("Os módulos PyQt não estão disponíveis no interpretador atual.")
-        print("Ative o ambiente virtual e execute o script novamente.")
+    run_browser()
 
 
 if __name__ == "__main__":

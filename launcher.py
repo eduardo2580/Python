@@ -493,19 +493,17 @@ class Launcher(tk.Tk):
             card.refresh_lang()
 
     def _get_imported_modules(self, script_path: str) -> set:
-        """Extract top-level module names from import statements, via the AST
-        (handles `import x as y`, `import a, b`, relative imports, etc.
-        correctly — a hand-rolled string parser gets these wrong)."""
+        """Top-level imports only (skip lazy/bootstrap imports inside functions)."""
         modules = set()
         try:
             with open(script_path, "r", encoding="utf-8") as f:
                 tree = ast.parse(f.read(), filename=script_path)
-            for node in ast.walk(tree):
+            for node in tree.body:
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         modules.add(alias.name.split(".")[0])
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module and node.level == 0:  # skip relative imports
+                    if node.module and node.level == 0:
                         modules.add(node.module.split(".")[0])
         except Exception:
             pass
@@ -552,7 +550,7 @@ class Launcher(tk.Tk):
             self._set_status(self._t("installing").format(mod))
             try:
                 proc = subprocess.run([sys.executable, "-m", "pip", "install", mod],
-                                      capture_output=True, text=True, timeout=60)
+                                      capture_output=True, text=True, timeout=180)
                 if proc.returncode != 0:
                     error_msg = proc.stderr or proc.stdout or "Unknown error"
                     self.after(0, lambda m=mod, e=error_msg: messagebox.showerror(
@@ -573,29 +571,54 @@ class Launcher(tk.Tk):
         self._set_status(self._t("install_success").format(", ".join(pip_names)))
         return True
 
-    def _open_terminal_window(self, project: dict, card: "ProjectCard"):
-        """Open the embedded Tkinter terminal window for the project."""
-        if not self._ensure_modules_installed(project, card):
-            return
+    def _cmd_and_cwd(self, project: dict):
         path = project["path"]
         cwd = os.path.dirname(path)
         cmd = [sys.executable, "-u", path] + project.get("args", [])
+        return cmd, cwd
+
+    def _on_project_done(self, project: dict, card: "ProjectCard", returncode: int):
+        status = "done" if returncode == 0 else "error"
+        msg = (self._t("finished").format(project["name"]) if status == "done"
+               else self._t("errored").format(project["name"]))
+        self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
+
+    def _open_terminal_window(self, project: dict, card: "ProjectCard"):
+        cmd, cwd = self._cmd_and_cwd(project)
         self._set_status(self._t("launching").format(project["name"]))
         card.set_status("running")
-        def on_done(returncode):
-            status = "done" if returncode == 0 else "error"
-            msg = (self._t("finished").format(project["name"]) if status == "done"
-                   else self._t("errored").format(project["name"]))
-            self.after(0, lambda: (card.set_status(status), self._set_status(msg)))
-        TerminalWindow(self, project["name"], cmd, cwd, on_done)
+        TerminalWindow(self, project["name"], cmd, cwd,
+                       lambda code: self._on_project_done(project, card, code))
 
-    def _run_project(self, project: dict, card: "ProjectCard", retry=False):
+    def _launch_gui(self, project: dict, card: "ProjectCard"):
+        cmd, cwd = self._cmd_and_cwd(project)
+        self._set_status(self._t("launching").format(project["name"]))
+        card.set_status("running")
+        try:
+            proc = subprocess.Popen(cmd, cwd=cwd)
+        except Exception as e:
+            messagebox.showerror(self._t("err_title"), str(e))
+            card.set_status("error")
+            self._set_status(self._t("errored").format(project["name"]))
+            return
+        self._set_status(self._t("launched").format(project["name"]))
+
+        def wait():
+            self._on_project_done(project, card, proc.wait())
+
+        threading.Thread(target=wait, daemon=True).start()
+
+    def _run_project(self, project: dict, card: "ProjectCard"):
         path = project["path"]
         if not os.path.exists(path):
-            messagebox.showerror(self._t("not_found"), f"Path not found:\n{path}")
+            messagebox.showerror(self._t("not_found"), self._t("not_found_msg").format(path))
             return
-        # Always use the embedded terminal window
-        self._open_terminal_window(project, card)
+        if not self._ensure_modules_installed(project, card):
+            return
+        if project.get("gui"):
+            self._launch_gui(project, card)
+        else:
+            self._open_terminal_window(project, card)
 
     def _refresh_list(self):
         query = self._search_var.get().lower() if hasattr(self, "_search_var") else ""
