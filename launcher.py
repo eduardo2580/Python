@@ -509,6 +509,17 @@ class Launcher(tk.Tk):
             pass
         return modules
 
+    def _is_local_module(self, module_name: str, script_path: str) -> bool:
+        """Return True when the imported module is a project-local file/package."""
+        if not module_name:
+            return False
+        script_dir = os.path.dirname(os.path.abspath(script_path))
+        module_path = os.path.join(script_dir, module_name)
+        return (
+            os.path.isfile(module_path + ".py") or
+            os.path.isfile(os.path.join(module_path, "__init__.py"))
+        )
+
     # Import name -> PyPI package name, for the handful of common cases
     # where they differ. Keep this short; it's a fallback, not a registry.
     _PIP_NAME_OVERRIDES = {
@@ -527,7 +538,7 @@ class Launcher(tk.Tk):
         stdlib = getattr(sys, "stdlib_module_names", set())
         missing = []
         for mod in modules:
-            if mod in stdlib:
+            if mod in stdlib or self._is_local_module(mod, path):
                 continue
             try:
                 subprocess.run([sys.executable, "-c", f"import {mod}"], capture_output=True, check=True, timeout=5)

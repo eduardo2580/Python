@@ -124,5 +124,15 @@
       "es": "Cuenta letras, palabras y oraciones, aplica la fórmula Coleman-Liau y muestra el nivel de grado escolar.",
       "pt": "Conta letras, palavras e frases, aplica a fórmula Coleman-Liau e mostra o nível de leitura escolar."
     }
+  },
+  {
+    "name": "Pomodoro",
+    "path": "PomodoroInPython/main.py",
+    "gui": true,
+    "description": {
+      "en": "Pomodoro",
+      "es": "Pomodoro",
+      "pt": "Pomodoro"
+    }
   }
 ]
